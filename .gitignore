@@ -1,5 +1,0 @@
-# Ignore downloaded data
-DATA/*
-!DATA/.gitkeep
-!DATA/raw/.gitkeep
-!DATA/processed/.gitkeep
