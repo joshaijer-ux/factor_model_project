@@ -132,7 +132,7 @@ def winsorize_returns(df, col='mom_1', lower=0.025, upper=0.975):
         hi = x.quantile(upper)
         return x.clip(lower=lo, upper=hi)
     df[col] = df.groupby('DATE')[col].transform(_clip_group)
-    return df.
+    return df
 
 
 # =============================================================
