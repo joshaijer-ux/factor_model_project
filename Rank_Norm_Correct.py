@@ -104,38 +104,6 @@ def leave_one_out_mean(df, var, by_cols):
     return loo
 
 # =============================================================
-# 4b. Winsorization
-# Paper: "We winsorize raw returns at the top and bottom 2.5%
-#         in each exchange in each month"
-# =============================================================
-def winsorize_returns(df, col='mom_1', lower=0.025, upper=0.975):
-    """
-    Winsorize a return column at the top and bottom percentiles
-    within each cross-section (DATE).
-    """
-    df = df.copy()
-    def _clip_group(x):
-        lo = x.quantile(lower)
-        hi = x.quantile(upper)
-        return x.clip(lower=lo, upper=hi)
-    df[col] = df.groupby('DATE')[col].transform(_clip_group)
-    return df
-
-###. def winsorize_returns(df, col='mom_1', lower=0.025, upper=0.975):
-    """
-    Winsorize a return column at the top and bottom percentiles
-    within each cross-section (DATE).
-    """
-    df = df.copy()
-    def _clip_group(x):
-        lo = x.quantile(lower)
-        hi = x.quantile(upper)
-        return x.clip(lower=lo, upper=hi)
-    df[col] = df.groupby('DATE')[col].transform(_clip_group)
-    return df
-
-
-# =============================================================
 # 5. Target Variable Construction
 # TARGET = next month return excess of cross-sectional mean
 # Uses permno as stock identifier, falls back to gvkey if permno is null
@@ -292,10 +260,6 @@ def Rankise(market):
             lambda x: str(int(x)).zfill(6) if pd.notna(x) else np.nan
         )
 
-    # ── Winsorize raw returns at 2.5% / 97.5% per month ────────────────
-    raw_data = winsorize_returns(raw_data, col='mom_1', lower=0.025, upper=0.975)
-    print("  Winsorized mom_1 at 2.5% / 97.5% per month")
-
     # ── FIX: Return filters ──────────────────────────────────────────────
     id_col = 'gvkey' if raw_data['PERMNO'].isnull().all() else 'PERMNO'
     raw_data = raw_data.sort_values([id_col, 'DATE'])
@@ -308,6 +272,13 @@ def Rankise(market):
     raw_data.loc[extreme, 'mom_1'] = np.nan  # >300% filter
     raw_data.loc[reversal, 'mom_1'] = np.nan  # next-month reversal after extreme
     raw_data.loc[raw_data['mom_1'] == 0, 'mom_1'] = np.nan  # zero-return filter
+
+    # Winsorize mom_1 at 2.5% and 97.5% per month (per paper Section 1.1)
+    def winsorize_group(x):
+        lo, hi = x.quantile(0.025), x.quantile(0.975)
+        return x.clip(lower=lo, upper=hi)
+
+    raw_data['mom_1'] = raw_data.groupby('DATE')['mom_1'].transform(winsorize_group)
 
     # ── FIX: Merge Compustat for depr and cashpr ─────────────────────────
     raw_data['gvkey'] = (
