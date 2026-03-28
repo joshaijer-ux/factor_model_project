@@ -273,6 +273,11 @@ def Rankise(market):
     raw_data.loc[reversal, 'mom_1'] = np.nan  # next-month reversal after extreme
     raw_data.loc[raw_data['mom_1'] == 0, 'mom_1'] = np.nan  # zero-return filter
 
+    # Winsorize mom_1 at 2.5% and 97.5% per month (per paper Section 1.1)
+    def winsorize_group(x):
+        lo, hi = x.quantile(0.025), x.quantile(0.975)
+        return x.clip(lower=lo, upper=hi)
+        
     # ── FIX: Merge Compustat for depr and cashpr ─────────────────────────
     raw_data['gvkey'] = (
         pd.to_numeric(raw_data['gvkey'], errors='coerce')  # '4449.0' → 4449.0
