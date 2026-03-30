@@ -27,6 +27,16 @@ from scipy.stats import spearmanr
 
 from RF_Load_Data import load_data, in_output, load_markets
 
+def load_market_mvel1(market):
+    """Load mvel1 from original market data."""
+    data_path = base / 'normalized' / f'{market}_ranked.parquet'
+    if data_path.exists():
+        df = pd.read_parquet(data_path)
+        df['DATE'] = pd.to_datetime(df['DATE'])
+        df['PERMNO'] = df['PERMNO'].astype(str)
+        return df[['PERMNO', 'DATE', 'mvel1']].copy()
+    return None
+
 # =============================================================================
 # CONFIGURATION - RELATIVE PATHS
 # =============================================================================
@@ -158,6 +168,12 @@ def apply_us_model_to_market(market):
     # 4. Rank Correlation
     rank_corr, _ = spearmanr(forecast['TARGET'], forecast['pred'])
     
+    # Load mvel1 for value-weighting
+    forecast['PERMNO'] = forecast['PERMNO'].astype(str)
+    mvel1_data = load_market_mvel1(market)
+    if mvel1_data is not None:
+        forecast = forecast.merge(mvel1_data, on=['PERMNO', 'DATE'], how='left')
+
     # 5 & 6. Sharpe Ratio and Decile Score Distance
     forecast['DATE'] = pd.to_datetime(forecast['DATE'])
     forecast['YearMonth'] = forecast['DATE'].dt.to_period('M')
