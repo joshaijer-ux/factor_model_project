@@ -11,11 +11,8 @@ from joblib import load
 import sys
 
 base = Path(r'C:\Users\matle\Desktop\VSCode\factor_model_project')
-
-# Add project path for imports
 sys.path.insert(0, str(base))
 
-# Feature names (36 features used in the paper)
 FEATURE_NAMES = [
     'absacc', 'acc', 'age', 'agr', 'bm', 'bm_ia', 'cashdebt', 'cashpr',
     'cfp', 'cfp_ia', 'chatoia', 'chcsho', 'chempia', 'chinv', 'chpmia',
@@ -24,18 +21,22 @@ FEATURE_NAMES = [
     'operprof', 'orgcap', 'pchcurrat', 'rd'
 ]
 
-# =============================================================================
-# HELPER FUNCTIONS
-# =============================================================================
+
+def load_market_data(market):
+    """Load original market data to get mvel1 for value-weighting."""
+    data_path = base / 'normalized' / f'{market}_ranked.parquet'
+    if data_path.exists():
+        df = pd.read_parquet(data_path)
+        df['DATE'] = pd.to_datetime(df['DATE'])
+        return df[['PERMNO', 'DATE', 'mvel1']].copy()
+    return None
+
 
 def get_feature_importance(market):
-    """Load feature importance from saved CSV or calculate from models."""
-    # Try loading from saved file first
     importance_file = base / 'forecasts' / market / 'rf_feature_importance.csv'
     if importance_file.exists():
         return pd.read_csv(importance_file)
     
-    # Otherwise calculate from models
     model_dir = base / 'model_parameters' / market / 'rf'
     if not model_dir.exists():
         return None
@@ -44,11 +45,9 @@ def get_feature_importance(market):
     if not model_files:
         return None
     
-    # Get feature count from first model
     first_model = load(model_files[0])
     n_features = first_model.n_features_in_
     
-    # Only use models with same number of features
     all_importances = []
     for mf in model_files:
         model = load(mf)
@@ -59,8 +58,6 @@ def get_feature_importance(market):
         return None
     
     avg_importance = np.mean(all_importances, axis=0)
-    
-    # Use feature names (truncate if fewer features)
     feature_names = FEATURE_NAMES[:n_features] if n_features <= len(FEATURE_NAMES) else [f'feature_{i}' for i in range(n_features)]
     
     importance_df = pd.DataFrame({
@@ -73,10 +70,6 @@ def get_feature_importance(market):
 
 
 def calculate_cka_similarity(market, reference_market='USA'):
-    """
-    Calculate CKA (Centered Kernel Alignment) similarity between market and reference.
-    Higher CKA = more similar learned relationships.
-    """
     if market == reference_market:
         return 1.0
     
@@ -86,7 +79,6 @@ def calculate_cka_similarity(market, reference_market='USA'):
     if not market_model_dir.exists() or not ref_model_dir.exists():
         return np.nan
     
-    # Get common years
     market_years = {int(f.stem.replace('year', '')) for f in market_model_dir.glob('year*.joblib')}
     ref_years = {int(f.stem.replace('year', '')) for f in ref_model_dir.glob('year*.joblib')}
     common_years = sorted(market_years & ref_years)
@@ -105,7 +97,6 @@ def calculate_cka_similarity(market, reference_market='USA'):
             market_model = load(market_model_path)
             ref_model = load(ref_model_path)
             
-            # Only include if both have same number of features
             if market_model.n_features_in_ == ref_model.n_features_in_:
                 market_importances.append(market_model.feature_importances_)
                 ref_importances.append(ref_model.feature_importances_)
@@ -113,11 +104,9 @@ def calculate_cka_similarity(market, reference_market='USA'):
     if len(market_importances) < 2:
         return np.nan
     
-    # Stack importances
     X = np.array(market_importances)
     Y = np.array(ref_importances)
     
-    # Linear CKA calculation
     YtX = Y.T @ X
     XtX = X.T @ X
     YtY = Y.T @ Y
@@ -128,13 +117,11 @@ def calculate_cka_similarity(market, reference_market='USA'):
     if denominator == 0:
         return np.nan
     
-    cka = numerator / denominator
-    
-    return cka
+    return numerator / denominator
 
 
 # =============================================================================
-# MAIN METRICS CALCULATION
+# MAIN
 # =============================================================================
 
 results = []
@@ -144,7 +131,6 @@ for market_dir in sorted((base / 'forecasts').iterdir()):
     if not market_dir.is_dir():
         continue
     
-    # Load predictions
     csvs = list((market_dir / 'rf').glob('*/test_pred.csv'))
     if not csvs:
         continue
@@ -157,7 +143,15 @@ for market_dir in sorted((base / 'forecasts').iterdir()):
     market = market_dir.name
     print(f"Processing {market}...", end=" ")
     
-    # 1. R² OOS (paper uses non-demeaned denominator)
+    # Load mvel1 from original data for value-weighting
+    market_data = load_market_data(market)
+    if market_data is not None:
+        df['DATE'] = pd.to_datetime(df['DATE'])
+        df['PERMNO'] = df['PERMNO'].astype(str)
+        market_data['PERMNO'] = market_data['PERMNO'].astype(str)
+        df = df.merge(market_data, on=['PERMNO', 'DATE'], how='left')
+    
+    # 1. R² OOS
     ss_res = ((df['TARGET'] - df['pred']) ** 2).sum()
     ss_tot = (df['TARGET'] ** 2).sum()
     r2_oos = 1 - ss_res / ss_tot
@@ -165,11 +159,10 @@ for market_dir in sorted((base / 'forecasts').iterdir()):
     # 2. MSE
     mse = ss_res / len(df)
     
-    # 3. Rank Correlation (Spearman)
+    # 3. Rank Correlation
     rank_corr, _ = spearmanr(df['TARGET'], df['pred'])
     
     # 4 & 5. Sharpe Ratio and Decile Score Distance
-    df['DATE'] = pd.to_datetime(df['DATE'])
     df['YearMonth'] = df['DATE'].dt.to_period('M')
     
     monthly_sharpe_ew = []
@@ -191,42 +184,61 @@ for market_dir in sorted((base / 'forecasts').iterdir()):
         short = month_df[month_df['pred_decile'] == month_df['pred_decile'].min()]
         
         if len(long) > 0 and len(short) > 0:
+            # Equal-weighted returns
             long_ret_ew = long['TARGET'].mean()
             short_ret_ew = short['TARGET'].mean()
             monthly_sharpe_ew.append(long_ret_ew - short_ret_ew)
             
-            if 'mvel1' in month_df.columns:
-                try:
-                    long_ret_vw = np.average(long['TARGET'], weights=np.exp(long['mvel1']))
-                    short_ret_vw = np.average(short['TARGET'], weights=np.exp(short['mvel1']))
-                except:
+            # Value-weighted returns (using mvel1 = log market cap)
+            if 'mvel1' in month_df.columns and month_df['mvel1'].notna().any():
+                long_valid = long[long['mvel1'].notna()]
+                short_valid = short[short['mvel1'].notna()]
+                
+                if len(long_valid) > 0 and len(short_valid) > 0:
+                    # Convert log market cap back to market cap for weights
+                    long_weights = np.exp(long_valid['mvel1'])
+                    short_weights = np.exp(short_valid['mvel1'])
+                    
+                    # Normalize weights
+                    long_weights = long_weights / long_weights.sum()
+                    short_weights = short_weights / short_weights.sum()
+                    
+                    long_ret_vw = (long_valid['TARGET'] * long_weights).sum()
+                    short_ret_vw = (short_valid['TARGET'] * short_weights).sum()
+                else:
                     long_ret_vw = long_ret_ew
                     short_ret_vw = short_ret_ew
             else:
                 long_ret_vw = long_ret_ew
                 short_ret_vw = short_ret_ew
+            
             monthly_sharpe_vw.append(long_ret_vw - short_ret_vw)
             
+            # Decile Score Distance
             long_actual_decile = long['actual_decile'].mean()
             short_actual_decile = short['actual_decile'].mean()
             decile_distances.append(long_actual_decile - short_actual_decile)
     
     if monthly_sharpe_ew and np.std(monthly_sharpe_ew) > 0:
         sharpe_ew = (np.mean(monthly_sharpe_ew) / np.std(monthly_sharpe_ew)) * np.sqrt(12)
-        sharpe_vw = (np.mean(monthly_sharpe_vw) / np.std(monthly_sharpe_vw)) * np.sqrt(12) if np.std(monthly_sharpe_vw) > 0 else np.nan
-        decile_dist = np.mean(decile_distances)
     else:
-        sharpe_ew = sharpe_vw = decile_dist = np.nan
+        sharpe_ew = np.nan
     
-    # 6. CKA Similarity with USA
+    if monthly_sharpe_vw and np.std(monthly_sharpe_vw) > 0:
+        sharpe_vw = (np.mean(monthly_sharpe_vw) / np.std(monthly_sharpe_vw)) * np.sqrt(12)
+    else:
+        sharpe_vw = np.nan
+    
+    decile_dist = np.mean(decile_distances) if decile_distances else np.nan
+    
+    # 6. CKA Similarity
     cka_similarity = calculate_cka_similarity(market, 'USA')
     
-    # 7. Feature Importance (top 5)
+    # 7. Feature Importance
     importance_df = get_feature_importance(market)
     if importance_df is not None and len(importance_df) > 0:
         top_5_features = importance_df.head(5)['feature'].tolist()
         
-        # Save full importance for this market
         for _, row in importance_df.iterrows():
             importance_results.append({
                 'Market': market,
@@ -253,10 +265,9 @@ for market_dir in sorted((base / 'forecasts').iterdir()):
     print("done")
 
 # =============================================================================
-# CREATE AND SAVE SUMMARIES
+# SAVE RESULTS
 # =============================================================================
 
-# Main results summary
 summary = pd.DataFrame(results).sort_values('Market')
 print("\n" + "=" * 80)
 print("FULL RESULTS SUMMARY")
@@ -266,21 +277,24 @@ print(summary.to_string(index=False))
 summary.to_csv(base / 'rf_results_full_summary.csv', index=False)
 print(f"\nSaved to: {base / 'rf_results_full_summary.csv'}")
 
-# Feature importance summary (all markets, all features)
 if importance_results:
     importance_summary = pd.DataFrame(importance_results)
     importance_summary.to_csv(base / 'rf_feature_importance_all_markets.csv', index=False)
     print(f"Saved to: {base / 'rf_feature_importance_all_markets.csv'}")
     
-    # Top features across all markets
     print("\n" + "=" * 80)
     print("TOP 10 FEATURES BY AVERAGE IMPORTANCE ACROSS MARKETS")
     print("=" * 80)
     avg_importance = importance_summary.groupby('Feature')['Importance_Pct'].mean().sort_values(ascending=False)
     print(avg_importance.head(10).to_string())
 
-# CKA Summary
 print("\n" + "=" * 80)
+print("CKA SIMILARITY WITH USA")
+print("=" * 80)
+cka_df = summary[['Market', 'CKA_vs_USA']].dropna().sort_values('CKA_vs_USA', ascending=False)
+print(cka_df.to_string(index=False))
+
+print(f"\nCompleted!")
 print("CKA SIMILARITY WITH USA (higher = more similar)")
 print("=" * 80)
 cka_df = summary[['Market', 'CKA_vs_USA']].dropna().sort_values('CKA_vs_USA', ascending=False)
