@@ -260,7 +260,6 @@ def Rankise(market):
             lambda x: str(int(x)).zfill(6) if pd.notna(x) else np.nan
         )
 
-    # ── FIX: Return filters ──────────────────────────────────────────────
     id_col = 'gvkey' if raw_data['PERMNO'].isnull().all() else 'PERMNO'
     raw_data = raw_data.sort_values([id_col, 'DATE'])
     extreme = raw_data['mom_1'].abs() > 3.0
@@ -273,14 +272,14 @@ def Rankise(market):
     raw_data.loc[reversal, 'mom_1'] = np.nan  # next-month reversal after extreme
     raw_data.loc[raw_data['mom_1'] == 0, 'mom_1'] = np.nan  # zero-return filter
 
-    # Winsorize mom_1 at 2.5% and 97.5% per month (per paper Section 1.1)
+    # Winsorize mom_1 at 2.5% and 97.5% per month
     def winsorize_group(x):
         lo, hi = x.quantile(0.025), x.quantile(0.975)
         return x.clip(lower=lo, upper=hi)
 
     raw_data['mom_1'] = raw_data.groupby('DATE')['mom_1'].transform(winsorize_group)
 
-    # ── FIX: Merge Compustat for depr and cashpr ─────────────────────────
+    # Merge Compustat for depr and cashpr
     raw_data['gvkey'] = (
         pd.to_numeric(raw_data['gvkey'], errors='coerce')  # '4449.0' → 4449.0
         .apply(lambda x: str(int(x)).zfill(6) if pd.notna(x) else np.nan)  # → '004449'
@@ -303,7 +302,7 @@ def Rankise(market):
         / (raw_data['cash_at'] * raw_data['assets'])
     ).replace([np.inf, -np.inf], np.nan)
 
-    # ── Construct TARGET and variables ───────────────────────────────────
+    # Construct TARGET and variables
     raw_data = construct_target(raw_data, market)
     print("  TARGET constructed")
 
@@ -352,7 +351,6 @@ def Rankise(market):
 # =============================================================
 # 9. Run All Markets
 # Runs normalization for all 32 markets
-# Note: this will take significant time
 # =============================================================
 markets = [
     "USA", "JPN", "CHN", "IND", "KOR", "HKG", "TWN", "FRA", "GBR", "THA",
