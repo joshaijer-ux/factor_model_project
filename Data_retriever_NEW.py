@@ -7,7 +7,7 @@ base    = Path(__file__).parent if '__file__' in dir() else Path.cwd()
 raw_dir = base / "DATA" / "raw"
 raw_dir.mkdir(parents=True, exist_ok=True)
 
-# ── COMPUSTAT ────────────────────────────────────────────────────────
+# COMPUSTAT
 data_all = (
     pd.concat([
         pd.read_csv(base / 'funda_global.csv', parse_dates=['datadate']),
@@ -18,7 +18,7 @@ data_all = (
 data_all.to_csv(base / 'funda_all.csv', index=False)
 print(f"Compustat combined rows: {len(data_all):,}")
 
-# ── JKP GLOBAL FACTOR ────────────────────────────────────────────────
+# JKP GLOBAL FACTOR
 jkp_files = [
     'global_factor_fra.csv',
     'global_factor_swe_ita_che.csv',
@@ -34,7 +34,7 @@ df_all = pd.concat(
 )
 print(f"Total JKP rows loaded: {len(df_all):,}")
 
-# ── SPLIT AND SAVE — vectorized via groupby ──────────────────────────
+# SPLIT AND SAVE
 paper_countries = set([
     "USA","JPN","CHN","IND","KOR","HKG","TWN","FRA","GBR","THA",
     "AUS","SGP","SWE","ZAF","POL","ISR","VNM","ITA","TUR","CHE",
