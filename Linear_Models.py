@@ -1,14 +1,3 @@
-"""
-Linear_Models.py
-Replication of Choi, Jiang & Zhang (2025) — Linear model baseline
-Models: OLS-3 | Huber-OLS ("linear") | LASSO | RIDGE
-Splits fixed to paper's Appendix B Table B1 (train_end, valid_end),
-test extended to 2024 (vs. paper's 2017).
-Reads  : normalized/{market}_ranked.parquet
-Writes : forecasts/{market}/{model}_pred.csv
-         rawsize/{market}_rawsize.csv
-"""
-
 import numpy as np
 import pandas as pd
 import os
@@ -52,11 +41,7 @@ HUBER_ALPHAS  = [1e-5, 1e-4, 1e-3]
 
 # ================================================================
 # 4.  Hard-coded splits from paper Appendix B Table B1
-#     Keys   : market code (matching your parquet filenames)
-#     Values : (train_end, valid_end)  — last year of each period
-#     Test   : valid_end + 1  →  2024  (extended vs. paper's 2017)
 # ================================================================
-# (train_start, train_end, valid_end)
 SPLITS = {
     'USA': (1963, 1979, 1989),
     'JPN': (2008, 2010, 2011),
@@ -113,17 +98,29 @@ def tune_and_fit(model_cls, alpha_grid, train_X, train_y, valid_X, valid_y,
     return best_m, best_alpha
 
 def export_rawsize(market, df):
-    out = df[['PERMNO', 'DATE', 'mvel1']].copy()
-    out['size'] = np.exp(out['mvel1'])
-    out = out[['PERMNO', 'DATE', 'size']]
+    if 'mvel1_raw' in df.columns:
+        out = df[['PERMNO', 'DATE', 'mvel1_raw']].copy()
+        out = out.rename(columns={'mvel1_raw': 'size'})
+        source = 'mvel1_raw (raw market equity)'
+    else:
+        # Fallback for old parquets that don't carry mvel1_raw yet.
+        # np.exp of ranked mvel1 is still wrong, but at least we warn loudly.
+        print(f"  [WARN] {market}: mvel1_raw not found — "
+              f"falling back to exp(ranked mvel1). Re-run rank_norm to fix.")
+        out = df[['PERMNO', 'DATE', 'mvel1']].copy()
+        out['size'] = np.exp(out['mvel1'])
+        out = out[['PERMNO', 'DATE', 'size']]
+        source = 'exp(ranked mvel1) [FALLBACK — inaccurate]'
+
     out['DATE'] = out['DATE'].dt.strftime('%Y-%m-%d')
     out.to_csv(rawsize_path / f"{market}_rawsize.csv", index=False)
+    print(f"  ✓ rawsize saved for {market} using {source}")
 
 # ================================================================
 # 6.  Main function
 # ================================================================
-def run_linear_models(market):
-    print(f"\n{'='*55}\n  {market}\n{'='*55}")
+def run_linear_models(market, label='full', test_start=None, test_end=None):
+    print(f"\n{'='*55}\n  {market}  [{label}]\n{'='*55}")
 
     parquet_file = normalized_path / f"{market}_ranked.parquet"
     if not parquet_file.exists():
@@ -136,13 +133,12 @@ def run_linear_models(market):
 
     df = pd.read_parquet(parquet_file)
 
-    # Robust date parsing — handles datetime, Period, string, int64 nanoseconds
+    # Robust date parsing
     try:
         df['DATE'] = pd.to_datetime(df['DATE'])
     except Exception:
         df['DATE'] = pd.to_datetime(df['DATE'].astype(str), errors='coerce')
 
-    # If still broken, force via string conversion
     if df['DATE'].isna().all():
         df['DATE'] = pd.to_datetime(df['DATE'].astype(str), errors='coerce')
 
@@ -154,14 +150,19 @@ def run_linear_models(market):
 
     df = df.sort_values('DATE').reset_index(drop=True)
 
-    if 'mvel1' in df.columns:
+    rawsize_file = rawsize_path / f"{market}_rawsize.csv"
+    if not rawsize_file.exists():
         export_rawsize(market, df)
 
-    feat_all = [f for f in ALL_FEATURES if f in df.columns]
+    feat_all  = [f for f in ALL_FEATURES  if f in df.columns]
     feat_ols3 = [f for f in OLS3_FEATURES if f in df.columns]
-    missing = [f for f in ALL_FEATURES if f not in df.columns]
+    missing   = [f for f in ALL_FEATURES  if f not in df.columns]
     if missing:
         print(f"  [WARN] Missing features: {missing}")
+
+
+    feat_all  = [f for f in feat_all  if f != 'mvel1_raw']
+    feat_ols3 = [f for f in feat_ols3 if f != 'mvel1_raw']
 
     train_start, train_end, valid_end = SPLITS[market]
 
@@ -173,16 +174,26 @@ def run_linear_models(market):
 
     end_year = int(df['DATE'].dt.year.max())
 
-    df = df[df['DATE'].dt.year >= train_start].reset_index(drop=True)
+    t_start = test_start if test_start is not None else valid_end + 1
+    t_end   = test_end   if test_end   is not None else end_year
+    t_start = max(t_start, valid_end + 1)
+    t_end   = min(t_end,   end_year)
+
+    if t_start > t_end:
+        print(f"  [SKIP] No test years in window [{t_start}, {t_end}]")
+        return
 
     print(f"  train_start={train_start} | init train ≤{train_end} | "
-          f"init valid ≤{valid_end} | test {valid_end + 1}–{end_year}")  # ← use end_year var
+          f"init valid ≤{valid_end} | test {t_start}–{t_end}")
 
     preds = {'ols-3': [], 'linear': [], 'lasso': [], 'ridge': []}
 
-    # rolling window: add_year goes from 0 up to end_year - valid_end - 1
-    # each iteration predicts one year of test data (matching authors' split_data)
     for add_year in range(end_year - valid_end):
+        test_year = valid_end + add_year + 1
+
+        if test_year < t_start or test_year > t_end:
+            continue
+
         train_df = df[df['DATE'].dt.year <= train_end + add_year]
         valid_df = df[
             (df['DATE'].dt.year >  train_end + add_year) &
@@ -192,10 +203,9 @@ def run_linear_models(market):
             (df['DATE'].dt.year >  valid_end + add_year) &
             (df['DATE'].dt.year <= valid_end + add_year + 1)
         ]
-        test_year = valid_end + add_year + 1
 
         if len(train_df) < 50 or len(valid_df) < 10 or len(test_df) == 0:
-            continue  # skip this year only, not the whole market
+            continue
 
         trX,  try_, _ = get_xy(train_df, feat_all)
         vaX,  vay,  _ = get_xy(valid_df, feat_all)
@@ -236,8 +246,8 @@ def run_linear_models(market):
               f"n_test={len(test_df):>5,} | "
               f"Huber α={h_a:.0e}  LASSO α={l_a:.0e}  RIDGE α={r_a:.0e}")
 
-    # Save forecasts
-    out_dir = forecast_path / market
+
+    out_dir = forecast_path / label / market
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for model_name, pred_list in preds.items():
@@ -248,12 +258,12 @@ def run_linear_models(market):
         out_df['TARGET'] *= 100
         out_df['pred']   *= 100
         out_df['DATE']    = pd.to_datetime(out_df['DATE']).dt.strftime('%Y-%m-%d')
-        out_path = out_dir / f"{model_name}_pred.csv"
-        out_df.to_csv(out_path)
-        print(f"  ✓ {model_name:7s}: {len(out_df):,} rows → {out_path.name}")
+        out_path_file = out_dir / f"{model_name}_pred.csv"
+        out_df.to_csv(out_path_file)
+        print(f"  ✓ {model_name:7s}: {len(out_df):,} rows → {out_path_file}")
 
 # ================================================================
-# 7.  Run all 32 markets
+# 7.  Run all 32 markets — three time windows each
 # ================================================================
 markets = [
     "USA", "JPN", "CHN", "IND", "KOR", "HKG", "TWN", "FRA", "GBR", "THA",
@@ -264,7 +274,9 @@ markets = [
 
 for market in markets:
     try:
-        run_linear_models(market)
+        run_linear_models(market, label='full')
+        run_linear_models(market, label='pre2018',  test_end=2017)
+        run_linear_models(market, label='from2018', test_start=2018)
     except Exception as e:
         print(f"\n  FAILED {market}: {e}")
         import traceback; traceback.print_exc()
