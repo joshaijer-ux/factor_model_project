@@ -130,7 +130,7 @@ for market_dir in sorted(world_dir.iterdir()):
         market_data['PERMNO'] = market_data['PERMNO'].astype(str)
         df = df.merge(market_data, on=['PERMNO', 'DATE'], how='left')
     
-    # 1. R² OOS (per GKX: denominator is sum of squared returns, NOT demeaned)
+    # 1. R² OOS 
     ss_res = ((df['TARGET'] - df['pred']) ** 2).sum()
     ss_tot = (df['TARGET'] ** 2).sum()
     r2_oos = 1 - ss_res / ss_tot
