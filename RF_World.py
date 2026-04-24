@@ -1,17 +1,6 @@
 """
 RF_Market_WorldModel.py
 World Model Training Pipeline for Alpha Go Everywhere Replication.
-
-Based on Section 3.2 of Choi, Jiang, Zhang (2025):
-- Pools all stocks from all 32 markets together
-- Adds 31 country dummies (USA as baseline) as additional features
-- Trains a single unified RF model on pooled data
-- Tests on each market's test period separately
-
-Hyperparameters from the paper:
-- max_depth: [2, 4, 6]
-- max_features: [3, 5, 10]
-- n_estimators: 300
 """
 
 import numpy as np
