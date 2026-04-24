@@ -1,13 +1,5 @@
 """
 RF_Metrics_WorldModel.py
-Calculate all paper metrics for World Model predictions.
-
-Metrics calculated (matching RF_Metrics.py):
-- R² OOS (out-of-sample R-squared, per GKX formula)
-- MSE
-- Rank Correlation (Spearman)
-- Sharpe Ratio (Equal-weighted and Value-weighted)
-- Decile Score Distance
 """
 
 import pandas as pd
