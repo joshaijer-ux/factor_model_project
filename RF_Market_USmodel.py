@@ -1,13 +1,6 @@
 """
 RF_Market_USmodel.py
 Apply US-trained Random Forest models to International Markets.
-
-This is the "Alpha Goes Everywhere" test from Choi, Jiang, Zhang (2025).
-The US model is trained on US data, then applied to predict returns in other markets
-WITHOUT retraining. This tests whether US return-characteristic relationships
-transfer to international markets.
-
-Based on ISLP textbook Chapter 8 and paper methodology.
 """
 
 import numpy as np
