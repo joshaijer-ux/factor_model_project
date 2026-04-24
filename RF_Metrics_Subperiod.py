@@ -161,7 +161,6 @@ def process_model_forecasts(forecasts_dir, model_name):
         # Parse DATE
         df['DATE'] = pd.to_datetime(df['DATE'])
 
-        # FIX: Drop mvel1 and YearMonth if already present in forecast file
         # (US Transfer forecasts include these columns from RF_Market_USmodel.py).
         # Without this, merging below produces mvel1_x / mvel1_y, and the
         # 'mvel1' column check in calculate_metrics() silently fails → VW = EW.
