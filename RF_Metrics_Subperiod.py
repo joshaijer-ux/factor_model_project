@@ -1,15 +1,6 @@
 """
 RF_Metrics_SubPeriods.py
-Calculate metrics for sub-periods using existing forecast files.
-
-Splits results into:
-- Full period (all test years)
-- Pre-2018 (paper's original test period, up to Dec 2017)
-- Post-2017 (extended period, Jan 2018 onwards)
-
-Outputs:
-- rf_subperiod_results.csv (all models, all periods in one file)
-- rf_subperiod_summary.csv (average metrics by model and period)
+Calculate metrics for sub-periods using existing forecast files
 """
 
 import pandas as pd
