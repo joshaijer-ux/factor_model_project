@@ -397,7 +397,6 @@ def run_world_model():
         print(f"  {test_year} | n_train={n_tr:>8,} n_test={n_te:>7,} | "
               f"Huber α={h_a:.0e}  LASSO α={l_a:.0e}  RIDGE α={r_a:.0e}")
 
-    # Flush to disk — one CSV per market per model
     MODEL_COLS = {
         'ols-3':  'pred_ols3',
         'linear': 'pred_linear',
