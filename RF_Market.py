@@ -1,11 +1,7 @@
 """
 RF_Market.py
-Random Forest Training Pipeline for Alpha Go Everywhere Replication.
 
-Based on ISLP textbook Chapter 8 Lab (Section 8.3.3 Bagging and Random Forests)
-and Choi, Jiang, Zhang (2025) hyperparameters.
-
-Hyperparameters from the paper:
+Hyperparameters:
 - max_depth: [2, 4, 6]
 - max_features: [3, 5, 10]
 - n_estimators: 300
