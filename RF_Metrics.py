@@ -1,5 +1,5 @@
 """
-Calculate all paper metrics: R² OOS, MSE, Sharpe Ratio, Rank Correlation, Decile Score Distance,
+Calculate all metrics: R² OOS, MSE, Sharpe Ratio, Rank Correlation, Decile Score Distance,
 Relative Importance of Predictors, and CKA Similarity Index
 """
 
